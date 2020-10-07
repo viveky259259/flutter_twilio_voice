@@ -8,26 +8,26 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.media.AudioManager
 import android.os.Build
 import android.os.PowerManager
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import com.highlevel.flutter_twilio_voice.flutter_twilio_voice.AppRtc.AppRTCAudioManager
 import io.flutter.plugin.common.MethodChannel
 
 class TwilioManager(context: Context,
                     activity: Activity,
                     wakeLock: PowerManager.WakeLock,
-                    audioManager: AudioManager,
+                    audioManager: AppRTCAudioManager,
                     notificationManager: NotificationManager,
                     channel: MethodChannel) {
 
     private val TAG = "VoiceActivity"
 
     private val _wakeLock: PowerManager.WakeLock = wakeLock
-    private val _audioManager: AudioManager = audioManager
+    private val _audioManager: AppRTCAudioManager = audioManager
     private val _notificationManager: NotificationManager = notificationManager
     private val _context: Context = context
     private val PERMISSION_REQUEST_CODE: Int = 1
@@ -41,7 +41,7 @@ class TwilioManager(context: Context,
     init {
         createNotificationChannel()
         checkAndRequestPermission()
-        twilioAndroid = TwilioAndroid(_context, _wakeLock, _audioManager, channel, cancelNotification = { cancelNotification() })
+        twilioAndroid = TwilioAndroid(_context, _wakeLock, audioManager, channel, cancelNotification = { cancelNotification() })
 
     }
 
@@ -127,5 +127,10 @@ class TwilioManager(context: Context,
 
     fun keyPress(digit: String) {
         twilioAndroid.keyPress(digit)
+    }
+
+    fun setBluetooth(bluetooth: Boolean):String {
+        twilioAndroid.setBluetoothStatus(bluetooth)
+        return twilioAndroid.getBluetoothName()
     }
 }

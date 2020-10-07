@@ -9,9 +9,13 @@ import android.content.Context.POWER_SERVICE
 import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.os.PowerManager
+import android.util.Log
+import android.view.Window
+import android.view.WindowManager
 import androidx.annotation.NonNull
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.highlevel.flutter_twilio_voice.flutter_twilio_voice.AppRtc.AppRTCAudioManager
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
@@ -21,6 +25,7 @@ import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
 import io.flutter.plugin.common.PluginRegistry.Registrar
 
+
 public class FlutterTwilioVoicePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
 
     private lateinit var channel: MethodChannel
@@ -29,7 +34,8 @@ public class FlutterTwilioVoicePlugin : FlutterPlugin, MethodCallHandler, Activi
     private lateinit var twilioManager: TwilioManager
     private val PERMISSION_REQUEST_CODE = 1
     private lateinit var context: Context
-
+    private lateinit var audioManager: AppRTCAudioManager
+    private lateinit var activity: Activity
     var appPermission = arrayOf(
             Manifest.permission.RECORD_AUDIO,
             Manifest.permission.WRITE_EXTERNAL_STORAGE,
@@ -48,6 +54,7 @@ public class FlutterTwilioVoicePlugin : FlutterPlugin, MethodCallHandler, Activi
 
         @JvmStatic
         fun registerWith(registrar: Registrar) {
+            Log.e("Register with", "initiated")
             instance = FlutterTwilioVoicePlugin()
             instance.channel = MethodChannel(registrar.messenger(), "flutter_twilio_voice")
             instance.channel.setMethodCallHandler(instance)
@@ -105,6 +112,10 @@ public class FlutterTwilioVoicePlugin : FlutterPlugin, MethodCallHandler, Activi
                 twilioManager.disconnectCall()
                 result.success(true)
             }
+            "bluetooth" -> {
+                val isBluetooth: Boolean = call.argument<Boolean>("bluetooth") as Boolean
+                result.success(twilioManager.setBluetooth(isBluetooth))
+            }
             else -> {
                 result.success(false)
             }
@@ -122,13 +133,32 @@ public class FlutterTwilioVoicePlugin : FlutterPlugin, MethodCallHandler, Activi
 
     fun initPlugin(activity: Activity) {
         checkAndRequestPermission(activity)
+        this.activity = activity
         try {
             _field = PowerManager::class.java.javaClass.getField("PROXIMITY_SCREEN_OFF_WAKE_LOCK").getInt(null)
         } catch (e: Exception) {
         }
+        // These flags ensure that the activity can be launched when the screen is locked.
+
+        val window: Window = activity.window
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
+            activity.setShowWhenLocked(true)
+            activity.setTurnScreenOn(true)
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        } else
+            window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
+                    or WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+                    or WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+
+        /*
+         * Needed for setting/abandoning audio focus during a call
+         */
+        audioManager = AppRTCAudioManager.create(activity.applicationContext)
         twilioManager = TwilioManager(context = activity,
                 activity = activity,
-                audioManager = (activity.getSystemService(Context.AUDIO_SERVICE) as AudioManager?)!!,
+                audioManager = audioManager,
                 wakeLock = (activity.getSystemService(POWER_SERVICE) as PowerManager).newWakeLock(_field, activity.localClassName),
                 notificationManager = (activity.getSystemService(NOTIFICATION_SERVICE) as NotificationManager),
                 channel = channel
@@ -137,20 +167,8 @@ public class FlutterTwilioVoicePlugin : FlutterPlugin, MethodCallHandler, Activi
     }
 
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
-        checkAndRequestPermission(binding.activity)
-        try {
-            _field = PowerManager::class.java.javaClass.getField("PROXIMITY_SCREEN_OFF_WAKE_LOCK").getInt(null)
-        } catch (e: Exception) {
-            return
-        }
-        twilioManager = TwilioManager(context = binding.activity,
-                activity = binding.activity,
-                audioManager = (binding.activity.getSystemService(Context.AUDIO_SERVICE) as AudioManager?)!!,
-                wakeLock = (binding.activity.getSystemService(POWER_SERVICE) as PowerManager).newWakeLock(_field, binding.activity.localClassName),
-                notificationManager = (binding.activity.getSystemService(NOTIFICATION_SERVICE) as NotificationManager),
-                channel = channel
-        )
-        binding.activity.volumeControlStream = AudioManager.STREAM_VOICE_CALL
+        Log.e("onAttachedToActivity", "initiated")
+        initPlugin(binding.activity)
     }
 
     override fun onDetachedFromActivityForConfigChanges() {
@@ -160,6 +178,7 @@ public class FlutterTwilioVoicePlugin : FlutterPlugin, MethodCallHandler, Activi
     }
 
     override fun onDetachedFromActivity() {
+        audioManager.stop()
     }
 
 

@@ -8,6 +8,8 @@ import 'package:flutter_twilio_voice/exceptions/twilio_call_exceptions.dart';
 import 'package:flutter_twilio_voice/models/call.dart';
 import 'package:meta/meta.dart' show required;
 
+import 'enum/selected_audio.dart';
+
 class FlutterTwilioVoice {
   static const MethodChannel _channel =
       const MethodChannel('flutter_twilio_voice');
@@ -23,16 +25,20 @@ class FlutterTwilioVoice {
   final Function onPermissionDenied;
   final Function onConnectFailure;
   final Function onRinging;
+  final Function onBluetoothDeviceChanged;
   final String defaultIcon;
 
-  FlutterTwilioVoice({
-    @required this.defaultIcon,
-    @required this.onConnected,
-    @required this.onPermissionDenied,
-    @required this.onConnectFailure,
-    @required this.onDisconnected,
-    @required this.onRinging,
-  }) {
+  String bluetoothDevice;
+  SelectedAudio selectedAudio;
+
+  FlutterTwilioVoice(
+      {@required this.defaultIcon,
+      @required this.onConnected,
+      @required this.onPermissionDenied,
+      @required this.onConnectFailure,
+      @required this.onDisconnected,
+      @required this.onRinging,
+      @required this.onBluetoothDeviceChanged}) {
     _listenToMethodCalls();
   }
 
@@ -57,7 +63,7 @@ class FlutterTwilioVoice {
     return completer.future;
   }
 
-  Future<bool> hold() async {
+  Future<bool> toggleHold() async {
     Completer<bool> completer = Completer();
     _channel
         .invokeMethod(MethodChannelMethods.HOLD)
@@ -71,23 +77,51 @@ class FlutterTwilioVoice {
     return completer.future;
   }
 
-  Future<bool> speaker(bool speaker) async {
+  Future<bool> toggleBluetooth(bool value) async {
     Completer<bool> completer = Completer();
     _channel
-        .invokeMethod(
-            MethodChannelMethods.SPEAKER, {'speaker': speaker ?? false})
-        .then((result) => completer.complete(result))
-        .catchError((Object e) {
-          if (e is PlatformException)
-            throw TwilioCallException(error: e.message);
-          else
-            throw e;
-        });
+        .invokeMethod("bluetooth", {"bluetooth": value ?? true}).then((result) {
+      print("Bluetooth result: $result");
+      if (result != null) {
+        bluetoothDevice = result;
+        if (bluetoothDevice != null) {
+          selectedAudio = SelectedAudio.Bluetooth;
+        }
+        onBluetoothDeviceChanged();
+        return true;
+      } else
+        return false;
+    }).catchError((Object e) {
+      if (e is PlatformException)
+        throw TwilioCallException(error: e.message);
+      else
+        throw e;
+    });
+    return completer.future;
+  }
+
+  Future<bool> toggleSpeaker(bool speaker) async {
+    onSpeaker = speaker;
+    Completer<bool> completer = Completer();
+    _channel.invokeMethod(MethodChannelMethods.SPEAKER,
+        {'speaker': speaker ?? false}).then((result) {
+      print("Speaker result: $speaker");
+
+      onSpeaker
+          ? selectedAudio = SelectedAudio.Speaker
+          : selectedAudio = SelectedAudio.Phone;
+      completer.complete(result);
+    }).catchError((Object e) {
+      if (e is PlatformException)
+        throw TwilioCallException(error: e.message);
+      else
+        throw e;
+    });
 
     return completer.future;
   }
 
-  Future<bool> mute() async {
+  Future<bool> toggleMute() async {
     Completer<bool> completer = Completer();
     _channel
         .invokeMethod(MethodChannelMethods.MUTE)
@@ -168,6 +202,10 @@ class FlutterTwilioVoice {
                 if (status != null) 'status': status
               }));
             break;
+          case 'deviceUpdate':
+            String selected = call.arguments['selectedDevice'];
+            String allDevice = call.arguments['devices'];
+            print('Selected: $selected, All: $allDevice');
         }
       }
     });

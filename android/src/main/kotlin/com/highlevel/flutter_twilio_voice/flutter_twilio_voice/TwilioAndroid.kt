@@ -1,23 +1,21 @@
 package com.highlevel.flutter_twilio_voice.flutter_twilio_voice
 
 import android.content.Context
-import android.media.AudioAttributes
-import android.media.AudioFocusRequest
 import android.media.AudioManager
-import android.media.AudioManager.OnAudioFocusChangeListener
-import android.os.Build
 import android.os.PowerManager
 import android.util.Log
+import com.highlevel.flutter_twilio_voice.flutter_twilio_voice.AppRtc.AppRTCAudioManager
 import com.twilio.voice.*
 import io.flutter.plugin.common.MethodChannel
 
+
 class TwilioAndroid(context: Context,
                     wakeLock: PowerManager.WakeLock,
-                    audioManager: AudioManager,
+                    audioManager: AppRTCAudioManager,
                     channel: MethodChannel,
                     val cancelNotification: () -> Unit) {
     private val TAG = "FlutterTwilio"
-    private val _audioManager: AudioManager = audioManager
+    private val _audioManager: AppRTCAudioManager = audioManager
     private var savedAudioMode = AudioManager.MODE_INVALID
     private var params: HashMap<String, String> = HashMap<String, String>()
     private var activeCall: Call? = null
@@ -25,6 +23,30 @@ class TwilioAndroid(context: Context,
     private val _wakeLock: PowerManager.WakeLock = wakeLock
     private val _context: Context = context
     val _channel: MethodChannel = channel
+
+    init {
+        init()
+    }
+
+    fun init() {
+        _audioManager.start { audioDevice, availableAudioDevices ->
+            // This method will be called each time the number of available audio
+            // devices has changed.
+            onAudioManagerDevicesChanged(audioDevice, availableAudioDevices)
+        }
+    }
+
+    private fun onAudioManagerDevicesChanged(
+            device: AppRTCAudioManager.AudioDevice, availableDevices: Set<AppRTCAudioManager.AudioDevice>) {
+        Log.d(TAG, "onAudioManagerDevicesChanged: " + availableDevices + ", "
+                + "selected device: " + device)
+        // TODO(henrika): add callback handler.
+        val args = HashMap<String, String>()
+        args.put("devices", availableDevices.toString())
+        args.put("selectedDevice", device.toString())
+        args.put("status","deviceUpdate")
+        _channel.invokeMethod("call_listener", args)
+    }
 
     fun callListener(): Call.Listener {
         return object : Call.Listener {
@@ -35,19 +57,18 @@ class TwilioAndroid(context: Context,
             }
 
             override fun onConnectFailure(call: Call, callException: CallException) {
-                setAudioFocus(false)
+//                setAudioFocus(false)
                 stopWakeLock();
                 val message: String = String.format("Call Error:%d, %s", callException.errorCode, callException.message)
                 cancelNotification()
                 val args = HashMap<String, String>()
                 args.put("status", "connect_failure")
-                args.put("message",message)
+                args.put("message", message)
                 _channel.invokeMethod("call_listener", args)
             }
 
 
             override fun onConnected(call: Call) {
-                setAudioFocus(true)
                 activeCall = call
                 val callSid: String? = call.sid
                 val callFrom: String? = call.from
@@ -67,12 +88,11 @@ class TwilioAndroid(context: Context,
             }
 
             override fun onDisconnected(call: Call, callException: CallException?) {
-                setAudioFocus(false)
                 stopWakeLock()
                 val args: HashMap<String, String> = HashMap<String, String>()
                 if (callException != null) {
                     val message: String = String.format("Call Error: %d %s", callException.errorCode, callException.message)
-                    args.put("message",message)
+                    args.put("message", message)
                 }
                 cancelNotification()
                 args.put("status", "disconnected")
@@ -81,29 +101,6 @@ class TwilioAndroid(context: Context,
 
         }
 
-    }
-
-    fun setAudioFocus(setFocus: Boolean) {
-        if (setFocus) {
-            savedAudioMode = _audioManager.mode;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val playbackAttributes: AudioAttributes = AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build()
-
-                val focusRequest: AudioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-                        .setAudioAttributes(playbackAttributes)
-                        .build()
-
-                _audioManager.requestAudioFocus(focusRequest)
-            } else {
-                val focusRequestResult: Int = _audioManager.requestAudioFocus(OnAudioFocusChangeListener { focusChange: Int -> }, AudioManager.STREAM_VOICE_CALL,
-                        AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-            }
-            _audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-
-        }
     }
 
     fun stopWakeLock() {
@@ -122,7 +119,7 @@ class TwilioAndroid(context: Context,
         params.put("callerId", callerId)
         params.put("location", locationId)
         val codecList: ArrayList<AudioCodec> = ArrayList<AudioCodec>()
-        codecList.add(OpusCodec())
+        codecList.add(OpusCodec(8000));
         codecList.add(PcmuCodec())
         val connectOptions: ConnectOptions = ConnectOptions.Builder(accessToken)
                 .params(params)
@@ -159,16 +156,27 @@ class TwilioAndroid(context: Context,
     }
 
     fun speaker(speaker: Boolean): Boolean {
+        Log.e(TAG, "speaker value:$speaker")
         try {
-            _audioManager.isSpeakerphoneOn = speaker
+            setBluetoothStatus(false)
+            _audioManager.setSpeakerphoneOn(speaker)
         } catch (e: Exception) {
         }
-        return _audioManager.isSpeakerphoneOn
+        return _audioManager.isSpeakerPhoneOn
     }
 
     fun keyPress(digit: String) {
         if (activeCall != null) {
             activeCall!!.sendDigits(digit)
         }
+    }
+
+    fun setBluetoothStatus(status: Boolean) {
+        Log.e(TAG, "bluetooth value:$status")
+        _audioManager.setBluetoothPhoneOn(status)
+    }
+
+    fun getBluetoothName(): String {
+        return _audioManager.bluetoothName
     }
 }

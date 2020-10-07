@@ -81,7 +81,7 @@ class _MyAppState extends State<MyApp> {
   }
 
   void _toggleHold() async {
-    var result = await twilioVoice.hold();
+    var result = await twilioVoice.toggleHold();
     print("hold $result");
     setState(() {
       onHold = result;
@@ -89,7 +89,7 @@ class _MyAppState extends State<MyApp> {
   }
 
   void _toggleMute() async {
-    var result = await twilioVoice.mute();
+    var result = await twilioVoice.toggleMute();
     print("mute $result");
     setState(() {
       onMute = result;
@@ -97,7 +97,7 @@ class _MyAppState extends State<MyApp> {
   }
 
   void _toggleSpeaker(bool speaker) async {
-    var result = await twilioVoice.speaker(speaker);
+    var result = await twilioVoice.toggleSpeaker(speaker);
     print("speaker $result");
     setState(() {
       onSpeaker = result;
